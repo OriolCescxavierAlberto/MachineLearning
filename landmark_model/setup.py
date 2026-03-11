@@ -21,8 +21,7 @@ import shutil
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(SCRIPT_DIR)
 DATA_DIR = os.path.join(SCRIPT_DIR, 'data')
-PBF_FILE = os.path.join(PARENT_DIR, 'cataluna-260222.osm.pbf')
-MODEL_NAME = "landmark-cataluna"
+MODEL_NAME = "landmark-finder"
 
 
 def run_command(cmd, description, check=True):
@@ -44,12 +43,16 @@ def check_prerequisites():
     # Python
     print(f"  ✅ Python {sys.version.split()[0]}")
 
-    # Archivo PBF
-    if os.path.exists(PBF_FILE):
-        size_mb = os.path.getsize(PBF_FILE) / (1024 * 1024)
-        print(f"  ✅ Archivo OSM encontrado ({size_mb:.0f} MB)")
+    # Archivos PBF
+    import glob
+    pbf_files = glob.glob(os.path.join(PARENT_DIR, '*.osm.pbf'))
+    if pbf_files:
+        total_mb = sum(os.path.getsize(f) for f in pbf_files) / (1024 * 1024)
+        print(f"  ✅ {len(pbf_files)} archivos OSM encontrados ({total_mb:.0f} MB total)")
+        for pf in pbf_files:
+            print(f"     • {os.path.basename(pf)}")
     else:
-        errors.append(f"  ❌ No se encuentra: {PBF_FILE}")
+        errors.append(f"  ❌ No se encuentran archivos .osm.pbf en: {PARENT_DIR}")
 
     # Ollama
     ollama_path = shutil.which('ollama')
@@ -97,12 +100,12 @@ def step1_install_deps():
 
 def step2_extract_landmarks():
     """Paso 2: Extraer landmarks del archivo OSM."""
-    landmarks_file = os.path.join(DATA_DIR, 'landmarks_cataluna.json')
+    landmarks_file = os.path.join(DATA_DIR, 'landmarks.json')
     
     if os.path.exists(landmarks_file):
         size = os.path.getsize(landmarks_file)
         if size > 1000:  # Más de 1KB = probablemente válido
-            print(f"\n  ℹ️  landmarks_cataluna.json ya existe ({size/1024:.0f} KB)")
+            print(f"\n  ℹ️  landmarks.json ya existe ({size/1024:.0f} KB)")
             resp = input("  ¿Regenerar? (s/n): ").strip().lower()
             if resp != 's':
                 print("  ⏭️  Saltando extracción")
@@ -125,7 +128,7 @@ def step3_generate_knowledge():
 def step4_pull_base_model():
     """Paso 4: Descargar modelo base si no existe."""
     print(f"\n{'='*60}")
-    print("📥 PASO 4: Verificando modelo base llama3.2:1b...")
+    print("📥 PASO 4: Verificando modelo base llama3.2:3b...")
     print(f"{'='*60}")
 
     try:
@@ -133,15 +136,15 @@ def step4_pull_base_model():
         r = requests.get("http://localhost:11434/api/tags", timeout=5)
         models = [m['name'] for m in r.json().get('models', [])]
         
-        if any('llama3.2:1b' in m for m in models):
-            print("  ✅ llama3.2:1b ya está descargado")
+        if any('llama3.2:3b' in m for m in models):
+            print("  ✅ llama3.2:3b ya está descargado")
             return True
     except Exception:
         pass
 
-    print("  📥 Descargando llama3.2:1b...")
-    return run_command('ollama pull llama3.2:1b',
-                      "Descargando modelo base llama3.2:1b...")
+    print("  📥 Descargando llama3.2:3b...")
+    return run_command('ollama pull llama3.2:3b',
+                      "Descargando modelo base llama3.2:3b...")
 
 
 def step5_create_model():
@@ -161,7 +164,7 @@ def step5_create_model():
 def main():
     print("""
 ╔══════════════════════════════════════════════════════════╗
-║         🏛️  LANDMARK FINDER - SETUP CATALUÑA  🏛️        ║
+║         🏛️  LANDMARK FINDER - SETUP ESPAÑA  🏛️         ║
 ║                                                          ║
 ║  Este script configurará un modelo de Ollama capaz de    ║
 ║  identificar edificios famosos a partir de coordenadas   ║

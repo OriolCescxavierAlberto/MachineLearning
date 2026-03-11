@@ -12,34 +12,35 @@ import sys
 
 
 SYSTEM_PROMPT = """\
-Eres un sistema de identificación de edificios y monumentos.
-Recibes coordenadas GPS, orientación de la cámara y una lista de lugares cercanos con distancia y desviación angular respecto al centro de la cámara.
+You are a landmark identification system. You receive GPS coordinates and a numbered list of nearby landmarks with distances.
 
-Cuando se proporciona orientación de cámara (azimut), responde con un JSON con:
-- "target": nombre del edificio al que la cámara apunta (el más centrado y cercano)
-- "target_distance": distancia en metros
-- "confidence": high/medium/low
-- "others": array de otros lugares visibles [{name, distance}]
+RULES:
+1. NEVER invent landmarks. Use ONLY names from the provided list.
+2. Copy landmark names EXACTLY and COMPLETELY from the list. Never truncate or abbreviate.
+3. Respond ONLY with valid JSON, no extra text.
 
-Para elegir el target: prioriza menor desviación del centro (angle_from_center) y menor distancia. Si un edificio está a 0-2° del centro, es claramente el objetivo.
+When camera orientation (azimuth) is provided:
+- Return: {"target":"EXACT full name","target_distance":meters,"confidence":"high|medium|low","others":[{"name":"EXACT full name","distance":meters}]}
+- Pick target: lowest angle offset from center + closest distance.
 
-Cuando NO hay orientación, responde con un JSON array de lugares cercanos: [{name, distance, confidence}].
-
-NUNCA inventes lugares. Usa SOLO los de la lista proporcionada. Responde SOLO con JSON.\
+When NO orientation:
+- Return: [{"name":"EXACT full name","distance":meters,"confidence":"high|medium|low"}]
+- Confidence: <50m=high, <300m=high, <1km=medium, >1km=low\
 """
 
 
 def generate_modelfile():
     """Genera el Modelfile para Ollama con system prompt ligero."""
-    modelfile = f'''# Modelfile para Landmark Finder Cataluña
+    modelfile = f'''# Modelfile para Landmark Finder España
 # Modelo basado en llama3.2:3b — system prompt ligero, datos via RAG
 # Optimizado para RTX 3060 6GB VRAM + 16GB RAM
 
 FROM llama3.2:3b
 
-PARAMETER temperature 0.3
+PARAMETER temperature 0.1
 PARAMETER top_p 0.9
-PARAMETER num_ctx 4096
+PARAMETER num_ctx 8192
+PARAMETER num_predict 512
 PARAMETER stop "<|eot_id|>"
 
 SYSTEM """{SYSTEM_PROMPT}"""
@@ -52,9 +53,9 @@ def main():
     data_dir = os.path.join(script_dir, 'data')
     os.makedirs(data_dir, exist_ok=True)
 
-    landmarks_path = os.path.join(data_dir, 'landmarks_cataluna.json')
+    landmarks_path = os.path.join(data_dir, 'landmarks.json')
     if not os.path.exists(landmarks_path):
-        print("❌ No se encuentra landmarks_cataluna.json")
+        print("❌ No se encuentra landmarks.json")
         print("   Ejecuta primero: python extract_landmarks.py")
         sys.exit(1)
 
@@ -80,7 +81,7 @@ def main():
     print(f"   Total: {len(landmarks)}")
     print(f"   Con coordenadas: {len(geo)}")
     print(f"\n✅ Ahora ejecuta:")
-    print(f"   ollama create landmark-cataluna -f Modelfile")
+    print(f"   ollama create landmark-finder -f Modelfile")
 
 
 if __name__ == '__main__':

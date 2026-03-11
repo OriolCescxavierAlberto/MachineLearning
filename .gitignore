@@ -1,1 +1,12 @@
-cataluna-260222.osm.pbf
+# Archivos OSM PBF (demasiado grandes para GitHub)
+*.osm.pbf
+
+# JSON de landmarks generados (se regeneran con extract_landmarks.py)
+landmark_model/data/landmarks*.json
+landmark_model/data/landmarks.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/

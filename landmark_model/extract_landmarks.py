@@ -245,7 +245,7 @@ class LandmarkHandler(osmium.SimpleHandler):
                 self.seen_names.add(name)
 
 
-def extract_landmarks(pbf_path, output_path):
+def extract_landmarks(pbf_path, output_path, region_name='España'):
     """Extrae landmarks del archivo PBF."""
     print(f"📍 Extrayendo landmarks de: {pbf_path}")
     print(f"   Esto puede tardar varios minutos...\n")
@@ -279,7 +279,7 @@ def extract_landmarks(pbf_path, output_path):
             'metadata': {
                 'source': os.path.basename(pbf_path),
                 'total_landmarks': len(valid_landmarks),
-                'region': 'Cataluña, España',
+                'region': region_name,
             },
             'landmarks': valid_landmarks
         }, f, ensure_ascii=False, indent=2)
@@ -288,17 +288,124 @@ def extract_landmarks(pbf_path, output_path):
     return valid_landmarks
 
 
+def merge_landmarks(data_dir, output_path):
+    """Fusiona todos los JSON regionales en un solo landmarks.json."""
+    import glob
+    all_landmarks = []
+    sources = []
+    seen_keys = set()
+
+    json_files = sorted(glob.glob(os.path.join(data_dir, 'landmarks_*.json')))
+    if not json_files:
+        print("❌ No se encontraron archivos landmarks_*.json")
+        return []
+
+    for jf in json_files:
+        with open(jf, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        region = data.get('metadata', {}).get('region', os.path.basename(jf))
+        lms = data.get('landmarks', [])
+        added = 0
+        for lm in lms:
+            # Deduplicar por nombre + coordenadas aproximadas
+            key = f"{lm.get('name', '')}_{round(lm.get('lat', 0), 3)}_{round(lm.get('lon', 0), 3)}"
+            if key not in seen_keys:
+                seen_keys.add(key)
+                lm['region'] = region
+                all_landmarks.append(lm)
+                added += 1
+        sources.append(region)
+        print(f"  📂 {os.path.basename(jf)}: {added} landmarks ({len(lms) - added} duplicados)")
+
+    # Ordenar por score de fama
+    all_landmarks.sort(key=lambda x: x.get('fame_score', 0), reverse=True)
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump({
+            'metadata': {
+                'sources': sources,
+                'total_landmarks': len(all_landmarks),
+                'regions': sources,
+            },
+            'landmarks': all_landmarks
+        }, f, ensure_ascii=False, indent=2)
+
+    print(f"\n✅ Total combinado: {len(all_landmarks)} landmarks de {len(sources)} regiones")
+    print(f"💾 Guardado en: {output_path}")
+    return all_landmarks
+
+
+def region_from_filename(filename):
+    """Extrae nombre de región legible del nombre del archivo PBF."""
+    base = os.path.basename(filename).replace('.osm.pbf', '')
+    # Quitar fecha (ej: cataluna-260310 → cataluna)
+    parts = base.rsplit('-', 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        base = parts[0]
+    # Nombres legibles
+    names = {
+        'cataluna': 'Cataluña',
+        'madrid': 'Madrid',
+        'valencia': 'Valencia',
+        'pais-vasco': 'País Vasco',
+        'andalucia': 'Andalucía',
+        'galicia': 'Galicia',
+        'aragon': 'Aragón',
+        'castilla-y-leon': 'Castilla y León',
+        'castilla-la-mancha': 'Castilla-La Mancha',
+        'spain': 'España',
+    }
+    return names.get(base, base.replace('-', ' ').title())
+
+
 if __name__ == '__main__':
-    # Rutas
+    import glob
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(script_dir)
-    
-    pbf_path = os.path.join(parent_dir, 'cataluna-260222.osm.pbf')
-    output_path = os.path.join(script_dir, 'data', 'landmarks_cataluna.json')
+    data_dir = os.path.join(script_dir, 'data')
+    os.makedirs(data_dir, exist_ok=True)
 
-    if not os.path.exists(pbf_path):
-        print(f"❌ No se encuentra el archivo: {pbf_path}")
+    # Buscar TODOS los archivos .osm.pbf en el directorio padre
+    pbf_files = sorted(glob.glob(os.path.join(parent_dir, '*.osm.pbf')))
+
+    if not pbf_files:
+        print(f"❌ No se encontraron archivos .osm.pbf en: {parent_dir}")
         sys.exit(1)
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    extract_landmarks(pbf_path, output_path)
+    print(f"📍 Encontrados {len(pbf_files)} archivos PBF:")
+    for pf in pbf_files:
+        size_mb = os.path.getsize(pf) / (1024 * 1024)
+        print(f"   • {os.path.basename(pf)} ({size_mb:.0f} MB)")
+    print()
+
+    # Procesar cada PBF
+    for pbf_path in pbf_files:
+        region = region_from_filename(pbf_path)
+        base_name = os.path.basename(pbf_path).replace('.osm.pbf', '')
+        # Quitar fecha del nombre para el JSON
+        parts = base_name.rsplit('-', 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            base_name = parts[0]
+        output_path = os.path.join(data_dir, f'landmarks_{base_name}.json')
+
+        # Si ya existe y es reciente, preguntar
+        if os.path.exists(output_path):
+            size_kb = os.path.getsize(output_path) / 1024
+            print(f"\nℹ️  landmarks_{base_name}.json ya existe ({size_kb:.0f} KB)")
+            resp = input(f"   ¿Regenerar {region}? (s/n): ").strip().lower()
+            if resp != 's':
+                print(f"   ⏭️  Saltando {region}")
+                continue
+
+        print(f"\n{'='*60}")
+        print(f"🗺️  Procesando: {region}")
+        print(f"{'='*60}")
+        extract_landmarks(pbf_path, output_path, region_name=region)
+
+    # Fusionar todos en un solo archivo
+    print(f"\n{'='*60}")
+    print(f"🔗 Fusionando todos los landmarks...")
+    print(f"{'='*60}")
+    merged_path = os.path.join(data_dir, 'landmarks.json')
+    merge_landmarks(data_dir, merged_path)
